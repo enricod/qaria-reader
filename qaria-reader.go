@@ -2,28 +2,15 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"regexp"
 	"strconv"
 	"net/http"
 	"io/ioutil"
+	"database/sql"
+    _ "github.com/go-sql-driver/mysql"
 	)
-
-
-func main() {
-	fmt.Printf("lettore dati inquinamento per lombardia\n")
-	s1 := Stazione{ StazioneId:661, 
-		Nome:"Rezzato",
-		Inquinanti:"PM10,NO2,CO",
-		Url:"http://www2.arpalombardia.it/sites/QAria/_layouts/15/QAria/DettaglioStazione.aspx?IdStaz=661"}
-
-	misure, err := LeggiMisure(s1)
-	if (err != nil) {
-		fmt.Printf("errore %v",  err)
-	} else {
-		fmt.Printf("misure lette %v\n",  misure)
-	}
-}
 
 type Stazione struct {
   StazioneId int
@@ -39,6 +26,53 @@ type Misura struct {
     Valore float64
 }
 
+
+func main() {
+
+	fmt.Printf("Lettore dati inquinamento per lombardia\n")
+	s1 := Stazione{ StazioneId:661, 
+			Nome:"Rezzato",
+			Inquinanti:"PM10,NO2,CO",
+			Url:"http://www2.arpalombardia.it/sites/QAria/_layouts/15/QAria/DettaglioStazione.aspx?IdStaz=661"}
+
+	stazioni := []Stazione{ s1 }
+
+
+	misure, err := LeggiMisure(stazioni[0])
+	if (err != nil) {
+		fmt.Printf("errore %v",  err)
+	} else {
+		fmt.Printf("misure lette %v\n",  misure)
+		salvaInDb( misure )
+	}
+}
+
+
+func salvaInDb(misure []Misura) {
+	dbUsername := "root"
+	if db, err := sql.Open("mysql", dbUsername + ":root@tcp(127.0.0.1:3306)/qaria"); err != nil {
+		log.Fatal(err)
+	} else {
+		if stmt, err2 := db.Prepare("INSERT INTO misura(inquinante, valore, stazioneId, dataStr) VALUES(?, ?, ?, ?)"); err2 != nil {
+			
+			log.Fatal(err2)
+		} else {
+			for _, m := range misure {
+				if res, err3 := stmt.Exec(m.Inquinante, m.Valore, m.StazioneId, m.DataMisura); 
+							err3 != nil {
+					rowCnt, err4 := res.RowsAffected()
+					if err4 != nil {
+						log.Fatal(err)
+					} else {
+						log.Printf("dati inseriti %v\n", rowCnt)
+					}
+				}
+			}
+			
+		}
+	}
+	
+}
 
 func LeggiMisure( s Stazione) ([]Misura, error) {
 	fmt.Printf("STAZIONE nome=%v,\n\t URL=%v\n", s.Nome, s.Url)
