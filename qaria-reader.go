@@ -1,65 +1,88 @@
 package main
 
+/**
+ * programma a linea di comando per lettura da pagine html dei dati di inquinamento
+ *
+ */
 import (
 	"fmt"
 	"log"
+	"flag"
 	"strings"
 	"regexp"
 	"strconv"
 	"net/http"
 	"io/ioutil"
 	"database/sql"
-    _ "github.com/go-sql-driver/mysql"
-	)
+	_ "github.com/go-sql-driver/mysql"
+)
 
 type Stazione struct {
-  StazioneId int
-  Nome string
-  Url string
-  Inquinanti string
+	StazioneId int
+	Nome       string
+	Url        string
+	Inquinanti string
 }
 
 type Misura struct {
-    DataMisura string
-    Inquinante string
-    StazioneId int
-    Valore float64
+	DataMisura string
+	Inquinante string
+	StazioneId int
+	Valore     float64
 }
 
+type DbConf struct {
+	User string
+	Password string
+}
 
 func main() {
 
 	fmt.Printf("Lettore dati inquinamento per lombardia\n")
-	s1 := Stazione{ StazioneId:661, 
-			Nome:"Rezzato",
-			Inquinanti:"PM10,NO2,CO",
-			Url:"http://www2.arpalombardia.it/sites/QAria/_layouts/15/QAria/DettaglioStazione.aspx?IdStaz=661"}
+	dbusername := flag.String("dbusername", "root", "Utente per connessione a db")
+	flag.Parse()
 
-	stazioni := []Stazione{ s1 }
+	dbconf := DbConf{dbusername, "root"}
+	stazioni := ElencoStazioni();
 
-
-	misure, err := LeggiMisure(stazioni[0])
-	if (err != nil) {
-		fmt.Printf("errore %v",  err)
-	} else {
-		fmt.Printf("misure lette %v\n",  misure)
-		salvaInDb( misure )
+	for _, s := range stazioni {
+		misure, err := LeggiMisure(s)
+		if (err != nil) {
+			fmt.Printf("errore %v", err)
+		} else {
+			fmt.Printf("misure lette %v\n", misure)
+			salvaInDb(dbconf, misure)
+		}
 	}
 }
 
+func ElencoStazioni() []Stazione {
+	rezzato := Stazione{StazioneId:661,
+		Nome:"Rezzato",
+		Inquinanti:"PM10,NO2,CO",
+		Url:"http://www2.arpalombardia.it/sites/QAria/_layouts/15/QAria/DettaglioStazione.aspx?IdStaz=661"}
 
-func salvaInDb(misure []Misura) {
-	dbUsername := "root"
-	if db, err := sql.Open("mysql", dbUsername + ":root@tcp(127.0.0.1:3306)/qaria"); err != nil {
+	milano := Stazione{StazioneId:539,
+		Nome:"Milano Liguria",
+		Inquinanti:"NO2,CO",
+		Url:"http://www2.arpalombardia.it/sites/qaria/_layouts/15/qaria/DettaglioStazione.aspx?zona=MI&comune=451&IdStaz=539&isPDV=True"}
+	stazioni := []Stazione{rezzato, milano }
+	return stazioni
+}
+
+func salvaInDb(dbconf DbConf, misure []Misura) {
+	if db, err := sql.Open("mysql",
+			dbconf.User + ":" +
+			dbconf.Password +
+			"@tcp(127.0.0.1:3306)/qaria"); err != nil {
 		log.Fatal(err)
 	} else {
 		if stmt, err2 := db.Prepare("INSERT INTO misura(inquinante, valore, stazioneId, dataStr) VALUES(?, ?, ?, ?)"); err2 != nil {
-			
 			log.Fatal(err2)
 		} else {
 			for _, m := range misure {
-				if res, err3 := stmt.Exec(m.Inquinante, m.Valore, m.StazioneId, m.DataMisura); 
-							err3 != nil {
+				if res, err3 := stmt.Exec(m.Inquinante, m.Valore, m.StazioneId, m.DataMisura);
+					err3 != nil {
 					rowCnt, err4 := res.RowsAffected()
 					if err4 != nil {
 						log.Fatal(err)
@@ -68,19 +91,19 @@ func salvaInDb(misure []Misura) {
 					}
 				}
 			}
-			
 		}
+		defer db.Close()
 	}
-	
 }
 
-func LeggiMisure( s Stazione) ([]Misura, error) {
-	fmt.Printf("STAZIONE nome=%v,\n\t URL=%v\n", s.Nome, s.Url)
-	if resp, err :=  http.Get(s.Url); err == nil {
+func LeggiMisure(s Stazione) ([]Misura, error) {
+
+	fmt.Printf("STAZIONE %v, \t URL=%v\n", s.Nome, s.Url)
+	if resp, err := http.Get(s.Url); err == nil {
 		if htmlData, err2 := ioutil.ReadAll(resp.Body); err2 == nil {
 			bodyStr := string(htmlData)
-			
-			result, _ := EstraiMisure(s,bodyStr)
+
+			result, _ := EstraiMisure(s, bodyStr)
 			return result, nil
 		} else {
 			fmt.Printf("%v", err2)
@@ -90,19 +113,17 @@ func LeggiMisure( s Stazione) ([]Misura, error) {
 		fmt.Printf("%v", err)
 		return nil, err
 	}
+
 }
-
-
-
 
 func EstraiMisure(s Stazione, htmlStr string) ([]Misura, error) {
 	inquinanti := strings.Split(s.Inquinanti, ",")
 	dataMisura, _ := estraiDataDaHTML(htmlStr)
 	var result []Misura
 	for _, inq := range inquinanti {
-		i := strings.Index(htmlStr, "> "+inq+"  <")
+		i := strings.Index(htmlStr, "> " + inq + "  <")
 		if i > 0 {
-			
+
 			s2 := htmlStr[i:len(htmlStr)]
 			r, _ := regexp.Compile("([0-9.]+)&nbsp;&nbsp; <")
 			val, _ := strconv.ParseFloat(r.FindStringSubmatch(s2)[1], 32)
@@ -115,9 +136,9 @@ func EstraiMisure(s Stazione, htmlStr string) ([]Misura, error) {
 			}
 
 			result = append(result, misura)
-			
+
 		} else {
-			
+
 		}
 	}
 	return result, nil
@@ -139,6 +160,16 @@ func convertiData(dataHTML string) string {
 		mese = "04"
 	case "maggio":
 		mese = "05"
+	case "giugno":
+		mese = "06"
+	case "luglio":
+		mese = "07"
+	case "agosto":
+		mese = "08"
+	case "settembre":
+		mese = "09"
+	case "ottobre":
+		mese = "10"
 	case "novembre":
 		mese = "11"
 	case "dicembre":
@@ -150,7 +181,6 @@ func convertiData(dataHTML string) string {
 	}
 	return pezzi[2] + mese + pezzi[0]
 }
-
 
 func estraiDataDaHTML(htmlStr string) (string, error) {
 	r, _ := regexp.Compile("<span style=\"font-size:20pt;\">Gli inquinanti monitorati <b> ([a-zA-Z0-9 ]+) </b></span>")
