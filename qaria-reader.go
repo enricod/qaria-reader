@@ -5,34 +5,22 @@ package main
  *
  */
 import (
-	"fmt"
-	"log"
+	"database/sql"
 	"flag"
-	"strings"
+	"fmt"
+	_ "github.com/go-sql-driver/mysql"
+	"io/ioutil"
+	"log"
+	"net/http"
 	"regexp"
 	"strconv"
-	"net/http"
-	"io/ioutil"
-	"database/sql"
-	_ "github.com/go-sql-driver/mysql"
+	"strings"
+	"github.com/enricod/qaria-model"
 )
 
-type Stazione struct {
-	StazioneId int
-	Nome       string
-	Url        string
-	Inquinanti string
-}
-
-type Misura struct {
-	DataMisura string
-	Inquinante string
-	StazioneId int
-	Valore     float64
-}
 
 type DbConf struct {
-	User string
+	User     string
 	Password string
 }
 
@@ -42,12 +30,12 @@ func main() {
 	dbusername := flag.String("dbusername", "root", "Utente per connessione a db")
 	flag.Parse()
 
-	dbconf := DbConf{dbusername, "root"}
-	stazioni := ElencoStazioni();
+	dbconf := DbConf{*dbusername, "root"}
+	stazioni := qariamodel.ElencoStazioni()
 
 	for _, s := range stazioni {
 		misure, err := LeggiMisure(s)
-		if (err != nil) {
+		if err != nil {
 			fmt.Printf("errore %v", err)
 		} else {
 			fmt.Printf("misure lette %v\n", misure)
@@ -56,24 +44,12 @@ func main() {
 	}
 }
 
-func ElencoStazioni() []Stazione {
-	rezzato := Stazione{StazioneId:661,
-		Nome:"Rezzato",
-		Inquinanti:"PM10,NO2,CO",
-		Url:"http://www2.arpalombardia.it/sites/QAria/_layouts/15/QAria/DettaglioStazione.aspx?IdStaz=661"}
 
-	milano := Stazione{StazioneId:539,
-		Nome:"Milano Liguria",
-		Inquinanti:"NO2,CO",
-		Url:"http://www2.arpalombardia.it/sites/qaria/_layouts/15/qaria/DettaglioStazione.aspx?zona=MI&comune=451&IdStaz=539&isPDV=True"}
-	stazioni := []Stazione{rezzato, milano }
-	return stazioni
-}
 
-func salvaInDb(dbconf DbConf, misure []Misura) {
+func salvaInDb(dbconf DbConf, misure []qariamodel.Misura) {
 	if db, err := sql.Open("mysql",
-			dbconf.User + ":" +
-			dbconf.Password +
+		dbconf.User+":"+
+			dbconf.Password+
 			"@tcp(127.0.0.1:3306)/qaria"); err != nil {
 		log.Fatal(err)
 	} else {
@@ -81,8 +57,7 @@ func salvaInDb(dbconf DbConf, misure []Misura) {
 			log.Fatal(err2)
 		} else {
 			for _, m := range misure {
-				if res, err3 := stmt.Exec(m.Inquinante, m.Valore, m.StazioneId, m.DataMisura);
-					err3 != nil {
+				if res, err3 := stmt.Exec(m.Inquinante, m.Valore, m.StazioneId, m.DataMisura); err3 != nil {
 					rowCnt, err4 := res.RowsAffected()
 					if err4 != nil {
 						log.Fatal(err)
@@ -96,7 +71,7 @@ func salvaInDb(dbconf DbConf, misure []Misura) {
 	}
 }
 
-func LeggiMisure(s Stazione) ([]Misura, error) {
+func LeggiMisure(s qariamodel.Stazione) ([]qariamodel.Misura, error) {
 
 	fmt.Printf("STAZIONE %v, \t URL=%v\n", s.Nome, s.Url)
 	if resp, err := http.Get(s.Url); err == nil {
@@ -116,19 +91,23 @@ func LeggiMisure(s Stazione) ([]Misura, error) {
 
 }
 
-func EstraiMisure(s Stazione, htmlStr string) ([]Misura, error) {
+func EstraiMisure(s qariamodel.Stazione, htmlStr string) ([]qariamodel.Misura, error) {
 	inquinanti := strings.Split(s.Inquinanti, ",")
 	dataMisura, _ := estraiDataDaHTML(htmlStr)
-	var result []Misura
+	// fmt.Printf("\t htmlStr = %v\n", htmlStr)
+	var result []qariamodel.Misura
 	for _, inq := range inquinanti {
-		i := strings.Index(htmlStr, "> " + inq + "  <")
-		if i > 0 {
+		// fmt.Printf("\t inq = %v\n", inq)
 
+		i := strings.Index(htmlStr, "> " + inq + "<")
+		// fmt.Printf("\t i = %v\n", i)
+		if i > 0 {
 			s2 := htmlStr[i:len(htmlStr)]
 			r, _ := regexp.Compile("([0-9.]+)&nbsp;&nbsp; <")
+			// fmt.Printf("str = %v", r.FindStringSubmatch(s2)[1])
 			val, _ := strconv.ParseFloat(r.FindStringSubmatch(s2)[1], 32)
 
-			misura := Misura{
+			misura := qariamodel.Misura{
 				StazioneId: s.StazioneId,
 				Inquinante: inq,
 				Valore:     val,
