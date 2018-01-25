@@ -44,10 +44,10 @@ func leggiPaginaWeb(dir string, s qariamodel.Stazione) (string, error) {
 	fmt.Println()
 
 	// nome del file dove salvare la pagina HTML
-	filename := dir + "/" + t.Format(time.RFC3339) + "_" + strconv.Itoa(s.StazioneId) + `.html`
+	filename := dir + "/" + t.Format(time.RFC3339) + "_" + strconv.Itoa(s.StazioneID) + `.html`
 
-	fmt.Printf("lettura stazione %v, URL=%v\n", s.Nome, s.Url)
-	if resp, err := http.Get(s.Url); err == nil {
+	fmt.Printf("lettura stazione %v, URL=%v\n", s.Nome, s.URL)
+	if resp, err := http.Get(s.URL); err == nil {
 		if htmlData, err2 := ioutil.ReadAll(resp.Body); err2 == nil {
 			bodyStr := string(htmlData)
 			err = ioutil.WriteFile(filename, []byte(bodyStr), 0644)
