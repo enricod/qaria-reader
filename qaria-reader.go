@@ -24,7 +24,7 @@ func main() {
 	flag.Parse()
 
 	fmt.Printf("Lettore dati inquinamento per lombardia\n")
-	fmt.Println(fmt.Sprintf("\t cartella dove salverò i dati: %v", *outputdir))
+	fmt.Println(fmt.Sprintf("cartella destinazione: %v", *outputdir))
 
 	stazioni := qariamodel.ElencoStazioni()
 
